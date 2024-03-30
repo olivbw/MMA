@@ -1,6 +1,6 @@
 # Master MMA (Université Paris Cité)
 
-<img src="https://map5.mi.parisdescartes.fr/wp-content/uploads/2022/06/banniere2-2048x320.png" width =250></img>
+<img src="https://map5.mi.parisdescartes.fr/wp-content/uploads/2022/06/banniere2-2048x320.png" width =1000></img>
 
 ## Spécialité Mathématiques, Modélisation, Apprentissage
 
