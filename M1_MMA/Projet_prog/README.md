@@ -1,4 +1,4 @@
-Project carried out as part of a Python programming course during my Master's degree. This project topic was proposed by Madame Julie Delon (MAP5 & UMR CNRS 8145).
+Project carried out as part of a Python programming course during my Master's degree. This project topic was proposed by Madame [Julie Delon](https://judelo.github.io/) (MAP5 & UMR CNRS 8145).
 
 Using Python, a database is accessed using the pandas module, containing for each country in the world the coordinates of its geographical boundaries as well as information on the number of islands it contains, for example.
 

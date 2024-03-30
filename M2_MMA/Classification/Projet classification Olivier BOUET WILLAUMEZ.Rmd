@@ -1,0 +1,596 @@
+---
+title: 'TP noté : Modèles de mélange et régression logistique, Olivier BOUET WILLAUMEZ'
+date: "12/11/2023"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  html_notebook:
+    toc: yes
+---
+
+### Exercice 1
+
+Dans cet exercice le but est d'implémenter la méthode $LDA$ en utilisant les résultats du cours (sans utiliser la fonction lda du package MASS) et d'étudier ses performances sur des données simulées. Puis on comparera les résultats obtenus avec votre implémentation et celle obtenue avec la fonction lda.
+
+1.  Simulez un échantillon de taille $n = 200$ de données issues d'un mélange Gaussien homoscédastique ayant les caractéristiques suivantes: $Y ∼ B(p)$, $p = 0.8$, $X$ est à valeurs dans $\mathcal{R^2}$ et $X|Y = 0 ∼ \mathcal{N_2}(\mu_0,\Sigma)$, $X|Y = 1 ∼ \mathcal{N_2}(\mu_1,\Sigma)$,
+
+    où $\mu_0= \begin{pmatrix} 1 \\ 1 \end{pmatrix}$, $\mu_1= \begin{pmatrix} 4 \\ 2 \end{pmatrix}$, et $\Sigma= \begin{pmatrix} 2 & 1 \\ 1 & 2 \end{pmatrix}$. On pourra pour cela utiliser la fonction rmvnorm du package mvtnorm.
+
+```{r}
+# Définition des paramètres du modèle
+p=0.8
+p0=0.2
+p1=0.8
+n=200
+mu_0=matrix(c(1,1),2,1)
+mu_1=matrix(c(4,2),2,1)
+sigma=matrix(c(2, 1, 1, 2),2,2)
+
+#Génération du vecteur Y
+Y=rbinom(n,1,p)
+
+#Génération de X|Y
+require('mvtnorm')
+X=(1-Y)*rmvnorm(n,mu_0,sigma)+Y*rmvnorm(n,mu_1,sigma)
+```
+
+2.  Rappelez les formules du cours permettant d'obtenir les estimateurs de $\mu_0$, $\mu_1$, $p$, $\Sigma$ et les implémenter sous R sans utiliser la fonction lda.
+
+D'après le cours, on a que:
+
+1.  $\hat{p_0}= \frac{1} {n} \sum_{i=1}^{n} \mathcal{1}_{Y_i=0} = \frac{n_0}{n}$
+2.  $\hat{p_1}= \frac{1} {n} \sum_{i=1}^{n} \mathcal{1}_{Y_i=1} =\frac{n_1}{n}$
+3.  $\hat{\mu_k}= \frac{1} {n_k} \sum_{i: Y_i=k} X_i$
+4.  $\hat{\Sigma}= \frac{1} {n} \sum_{k=0}^{1} \sum_{i:Y_i=k}(X_i-\mu_k)(X_i-\mu_k)^t$
+
+```{r}
+#estimateurs
+n0=sum(Y==0)
+n1=sum(Y==1)
+p0_chap= n0/n
+p1_chap= n1/n
+mu0_chap=matrix((1/n0)*colSums(X*(Y==0)),1,2)
+mu1_chap=matrix((1/n1)*colSums(X*(Y==1)),1,2)
+mu0_bis_chap=matrix(mu0_chap,2,length(X[Y==0,])/2)
+mu0_chap_vect=t(mu0_bis_chap)
+mu1_bis_chap=matrix(mu1_chap,2,length(X[Y==1,])/2)
+mu1_chap_vect=t(mu1_bis_chap)
+
+bloc0=t(X[Y==0,]-mu0_chap_vect)%*%((X[Y==0,]-mu0_chap_vect))
+bloc1=t(X[Y==1,]-mu1_chap_vect)%*%((X[Y==1,]-mu1_chap_vect))
+sigma_chap=(1/n)*(bloc0+bloc1)
+cat("L'estimation de p est la suivante:",p1_chap,"\n")
+cat("L'estimation de mu0 est donnée par:(",mu0_chap,")\n")
+cat("L'estimation de mu1 est donnée par:(",mu1_chap,")\n")
+cat("L'estimation des coefficients de sigma est:",sigma_chap)
+```
+
+3.  Rappelez l'équation de la frontière de classification (formule vue en cours). C'est la droite telle que les points au dessus de cette droite et ceux en dessous n'ont pas la même étiquette.
+
+Comme nous sommes dans le cas homoscédastique, l'équation de la frontière de classification est de la forme suivante:
+
+$$ G_\theta(x) = 0 \iff log( \frac{p_1}{p_0}) - \frac{1}{2}(\mu_1+\mu_0)^T \Sigma^{-1}(\mu_1-\mu_0)+x^T\Sigma^{-1}(\mu_1 -\mu_0) = 0 $$
+
+\
+C'est une équation linéaire en $x$ !
+
+$x$ étant une variable en dimension 2, si l'on développe l'équation ( à l'aide de produits scalaires ) on se retrouve avec une équation de la forme $ax+b=y$, avec : $a=5$ et $b=3log( \frac{p_1}{p_0}) - \frac{3}{2}(\mu_1+\mu_0)^T \Sigma^{-1}(\mu_1-\mu_0)$
+
+```{r}
+# On définit alors ces coefficients pour la question prochaine:
+a = 5
+b = 3*log(p1/p0) -(3/2)*t(mu_1+mu_0)%*%solve(sigma)%*%(mu_1-mu_0)
+```
+
+4.  Tracez le nuage de points des observations en coloriant de deux couleurs différentes les données pour lesquelles $Y_i = 0$ et $Y_i = 1$. Sur ce même graphique, rajouter les estimations de $µ_0$ et $µ_1$ obtenus à la question 2. Puis y rajouter la frontière de classification à partir de l'équation donnée à la question précédente.
+
+```{r}
+library('ggplot2')
+donnees=data.frame(X,Y)
+plot = ggplot(data=donnees,aes(x=X1,y=X2,color=factor(Y),labs="Y"))
+plot = plot +geom_point()
+plot = plot + geom_abline(intercept=b,slope=a,color="darkgreen",linewidth=1)
+plot = plot + geom_point(aes(x=mu0_chap[1],y=mu0_chap[2],size=2),colour="red")
+plot = plot + geom_point(aes(x=mu1_chap[1],y=mu1_chap[2],size=2),colour="blue")
+plot = plot + theme(legend.position = "none")
+plot 
+```
+
+Ici, on voit bien les deux groupes de données pour lesquelles $Y_i = 0$ et $Y_i = 1$ , à savoir que celles en rouge correspondent à $Y_i = 0$ et celles en bleues à $Y_i = 1$. La droite verte est la frontière de classification et les gros points en rouge et bleu sont les $\mu$ estimés.\
+
+5\. Donnez une règle de classification à partir des estimations de $\mu_0$, $\mu_1$, $p$ et $\Sigma$. Simulez un nouvel échantillon test de taille $10 000$ suivant les caractéristiques définies à la question 1. Calculez le taux de mauvaises classifications sur cet échantillon test.
+
+Calculons $G_{\theta}(x) = log(\frac{\mathcal{P}[Y=1 |X=x]}{\mathcal{P}[Y=0 |X=x]}) = log(\frac{f_1(x)p_1}{f_0(x)p0})$. Une règle de classification est alors $\mathcal{1}_{G_{\theta}(x)>0}$ avec $\theta = (\hat{\mu_0},\hat{\mu_1},\hat{p},\hat{\Sigma})$.
+
+```{r}
+# Définition des données
+n=10000
+mu_0=c(1,1)
+mu_1=c(4,2)
+sigma=matrix(c(2,1,1,2),2,2)
+p=0.8
+
+#Génération du vecteur Y
+Y=rbinom(n,1,p)
+
+#Génération de X|Y
+X=(1-Y)*rmvnorm(n,mu_0,sigma)+Y*rmvnorm(n,mu_1,sigma)
+
+# Définition de G_theta
+f0=dmvnorm(X,mu0_chap,sigma_chap)
+f1=dmvnorm(X,mu1_chap,sigma_chap)
+G_theta=log((f1*p1_chap)/(f0*p0_chap))
+Yestim=(G_theta>0)
+# Risque de classification
+Risque=mean(Yestim!=Y)
+cat("Le taux de mauvaise classification est de:",Risque)
+```
+
+6\. Comparez vos résultats avec ceux obtenus en utilisant la fonction lda du package MASS. Vous devez en particulier montrer que vous obtenez les mêmes estimations de $\mu_0$, $\mu_1$, $p$ et le même taux de mauvaises classification.\
+
+```{r}
+# Chargement de la librairie adéquat
+library(MASS)
+
+# Création de l'échantillon d'apprentissage
+napp=500
+y.train= rbinom(napp,1,p)
+x.train = (1-y.train)*rmvnorm(napp,mu_0,sigma)+y.train*rmvnorm(napp,mu_1,sigma)
+datatrain=data.frame(x=x.train,y=y.train)
+model.lda= lda(y~.,data=datatrain)
+
+#On peut voir les estimations des paramètres via ces commandes
+
+# L'estimation de p est la suivante:
+cat("L'estimation de p est la suivante:",model.lda$prior[2],"\n")
+
+#L'estimation de mu0 et mu1 peut se lire dans le tableau suivant:
+cat("L'estimation de mu0 est donnée par:(",model.lda$means[1,],")\n")
+cat("L'estimation de mu1 est donnée par:(",model.lda$means[2,],")\n\n")
+
+#Création de l'échantillon de test
+ntest=10000
+y.test=rbinom(ntest,1,p)
+x.test=(1-y.test)*rmvnorm(ntest,mu_0,sigma)+y.test*rmvnorm(ntest,mu_1,sigma)
+newdata=data.frame(x=x.test,y=y.test)
+pred.lda=predict(model.lda, newdata=newdata)
+
+# Le taux de mauvaise classification est le suivant: 
+risque.estim= mean(pred.lda$class!=y.test)
+cat("Le taux de mauvaise classification via méthode lda dans ce cas est de:",risque.estim)
+```
+
+7\. Calculez la distance de Mahalanobis entre les lois $\mathcal{N}(\mu_0,\Sigma)$ et $\mathcal{N}(\mu_1,\Sigma)$. Rappelez la définition du classifieur de Bayes dans le cadre de mélange Gaussien homoscédastique puis rappelez la formule du risque de ce classifieur de Bayes (formule vue en cours). Sous R, calculez la valeur numérique du risque du classifieur de Bayes en utilisant la fonction pnorm et comparez avec le résultat obtenu à la question précédente.
+
+Calculons dans un premier temps la distance de Mahalanobis entre les deux lois. On rapelle que la formule donnant $\mathcal{D}$ est la suivante: $\mathcal{D^2} := (\mu_1 - \mu_0)^T\Sigma^{-1}(\mu_1 - \mu_0)$
+
+```{r}
+D_carre=t(mu_1-mu_0)%*%solve(sigma)%*%(mu_1-mu_0)
+D=sqrt(D_carre[1][1])
+cat("La distance de Mahalanobis entre les deux lois est de D =",D)
+```
+
+Le classifieur de Bayes dans le cadre de mélange de Gaussien homoscédastique est donné par la relation suivante: $g_\theta^*(x)=\mathcal{1}_{\{G_{\theta}(x)>0\}}$
+
+Par ailleurs, en utilisant le cours, on sait que le risque du classifieur de Bayes est donné par la formule suivante: $R_\theta(g_\theta^*)= p_0(1-\Phi[\frac{1}{2}D-\frac{1}{D}log(\frac{p_1}{p_0})])+p_1(\Phi[-\frac{1}{2}D-\frac{1}{D}log(\frac{p_1}{p_0})])$, avec $\Phi$ la fonction de répartition d'une $\mathcal{N}(0,1)$.
+
+Calculons alors ce risque sous R
+
+```{r}
+#Calculs intérmédiaires pour le risque
+bloc1_a=(1/2)*D-(1/D)*log(p1/p0)
+bloc1_b=p0*(1-pnorm(bloc1_a))
+bloc2_a=-(1/2)*D-(1/D)*log(p1/p0)
+bloc2_b=p1*(pnorm(bloc2_a))
+Risque_bayes=bloc1_b+bloc2_b
+
+#Le risque est donné par 
+cat("Le risque du classifieur de Bayes est:",Risque_bayes)
+```
+
+On constate que le risque du classifieur de Bayes est quasiment égal à celui que l'on a obtenu à la question d'avant via la méthode lda. La différence entre les deux est très petite.
+
+```{r}
+cat("La différence en valeur absolue du risque du classifieur de Bayes et de celui obtenu via méthode lda est de:",abs(Risque_bayes-risque.estim))
+```
+
+8\. Sur les mêmes données d'apprentissage que précédemment, implémentez un nouvel algorithme de classification basé sur la régression linéaire à l'aide de la fonction lm de R. Sur les mêmes données tests que précédemment, calculez le taux de mauvaises classification avec ce nouvel algorithme et comparez avec vos résultats de la question 5.
+
+```{r}
+# Algorithme basé sur la fonction lm de R
+model.lm=lm(y~.,data=datatrain)
+predict_lm=predict.lm(model.lm,data=newdata,type="response")
+risque_lm=mean(round(predict_lm)!=y.test)
+cat("Le risque obtenu avec la fonction lm est:",risque_lm)
+```
+
+9\. Construire une fonction prenant en entrée les paramètres de taille d'échantillon (d'apprentissage), $\mu_0$, $\mu_1$, $p$ et $\Sigma$ permettant de retourner le taux de mauvaise classification obtenu à partir des deux méthodes (celle de l'algorithme LDA et celle basée sur la régression linéaire) évalué sur un échantillon test de taille $10 000$. Faites varier les paramètres et résumez vos résultats dans un tableau contenant trois tailles d'échantillon $n$ différents et pour chaque $n$ trois jeux de paramètres $\mu_0$, $\mu_1$, $p$, $\Sigma$ différents. Le but est de présenter des scénarios où la méthode a un faible taux de mauvaise classification et d'autres où le taux de mauvaise classification est élevé.
+
+```{r}
+question9 = function(n,mu0,mu1,p,Sigma){
+  
+  # Création de l'échantillon d'apprentissage
+  y.train= rbinom(n,1,p)
+  x.train = (1-y.train)*rmvnorm(n,mu0,Sigma)+y.train*rmvnorm(n,mu1,Sigma)
+  datatrain=data.frame(x=x.train,y=y.train)
+  
+  # Modèles
+  model_lda= lda(y~.,data=datatrain)
+  model_lm= lm(y~.,data=datatrain)
+  
+  # Création de l'échantillon de test
+  ntest=10000
+  y.test=rbinom(ntest,1,p)
+  x.test=(1-y.test)*rmvnorm(ntest,mu0,Sigma)+y.test*rmvnorm(ntest,mu1,Sigma)
+  newdata=data.frame(x=x.test,y=y.test)
+  
+  # Prédictions
+  pred_lda=predict(model_lda, newdata=newdata)
+  predict_lm=predict.lm(model_lm,data=newdata,type="response")
+  
+  # Risques
+  risque_lda= mean(pred_lda$class!=y.test)
+  risque_lm= mean(round(predict_lm)!=y.test)
+  res=c(risque_lda,risque_lm)
+  
+  return(res)
+}
+```
+
+Définissons maintenant les différents jeux de paramètres :
+
+```{r}
+# Valeurs de n
+n1=100
+n2=500
+n3=1000
+
+# Jeu de paramètres 1
+mu_0_1=c(1,1)
+mu_1_1=c(3,3)
+sigma1=matrix(c(1,0,0,1),2,2)
+p1=0.7
+res1_1=question9(n1,mu_0_1,mu_1_1,p1,sigma1)
+res2_1=question9(n2,mu_0_1,mu_1_1,p1,sigma1)
+res3_1=question9(n3,mu_0_1,mu_1_1,p1,sigma1)
+res_1=c(res1_1,res2_1,res3_1)
+
+# Jeu de paramètres 2
+
+mu_0_2=c(1,1)
+mu_1_2=c(1,0)
+sigma2=matrix(c(1,0,0,1),2,2)
+p2=0.5
+res1_2=question9(n1,mu_0_2,mu_1_2,p2,sigma2)
+res2_2=question9(n2,mu_0_2,mu_1_2,p2,sigma2)
+res3_2=question9(n3,mu_0_2,mu_1_2,p2,sigma2)
+res_2=c(res1_2,res2_2,res3_2)
+
+# Jeu de paramètres 3
+
+mu_0_3=c(4,2)
+mu_1_3=c(3,2)
+sigma3=matrix(c(5,4,4,5),2,2)
+p3=0.9
+res1_3=question9(n1,mu_0_3,mu_1_3,p3,sigma3)
+res2_3=question9(n2,mu_0_3,mu_1_3,p3,sigma3)
+res3_3=question9(n3,mu_0_3,mu_1_3,p3,sigma3)
+res_3=c(res1_3,res2_3,res3_3)
+
+# Création de la dataframe qui contiendra nos données
+
+df <- data.frame(
+  jeu_de_param = c("1", "2", "3"),
+  n1_lda = c(res1_1[1],res1_2[1], res1_3[1]),
+  n1_lm=c(res1_1[2],res1_2[2], res1_3[2]),
+  n2_lda= c(res2_1[1],res2_2[1], res2_3[1]),
+  n2_lm=c(res2_1[2],res2_2[2], res2_3[2]),
+  n3_lda=c(res3_1[1],res3_2[1], res3_3[1]),
+  n3_lm=c(res3_1[2],res3_2[2], res3_3[2])
+)
+```
+
+On peut alors afficher les résultats des différents tests:
+
+```{r}
+head(df)
+```
+
+On constate que pour le premier jeu de paramètres soit pour $\Sigma_1= \begin{pmatrix} 1 & 0 \\ 0 & 1 \end{pmatrix}$, $\mu_{01}= \begin{pmatrix} 1 \\ 1\end{pmatrix}$,$\mu_{11}= \begin{pmatrix} 3 \\ 3\end{pmatrix}$ et $p_1=0.7$, le risque lda est très bon mais celui de la méthode lm est mauvais et ce qu'importe le nombre d'ittérations. On peut l'expliquer par l'écart entre $\mu_1$ et $\mu_0$.
+
+Pour le deuxième jeu de paramètres soit pour $\Sigma_2= \begin{pmatrix} 1 & 0 \\ 0 & 1 \end{pmatrix}$, $\mu_{02}= \begin{pmatrix} 1 \\ 1 \end{pmatrix}$,$\mu_{12}= \begin{pmatrix} 1 \\ 0 \end{pmatrix}$, et $p_2=0.5$, les deux risques sont très élevés et assez similaires, cela semble être du à la valeur de $p$.
+
+Pour finir, avec le dernier jeu de paramètres qui est $\Sigma_3= \begin{pmatrix} 5 & 4\\ 4 & 5 \end{pmatrix}$,$\mu_{03}= \begin{pmatrix} 4 \\ 2 \end{pmatrix}$,$\mu_{13}= \begin{pmatrix} 3 \\ 2 \end{pmatrix}$, et $p_3=0.9$, les deux risques sont formidables et presques identiques, cela est dû à la proximité des valeurs de $\mu$ et aussi à la valeur $p$ selon moi. $\Sigma$ joue un rôle dans la diminution de la valeur du risque également.
+
+10\. Existe-il des valeurs de p pour lesquels la méthode LDA et la méthode basée sur la régression linéaire donnent la même règle de classification ?
+
+```{r}
+head(df[3,])
+```
+
+Comme nous l'avons montré, pour des valeurs de $p$ extrêmes c'est à dire proche de $0$ ou $1$ et avec des valeurs de $\mu$ plutôt proches, les deux méthodes donnent un risque quasiment équivalent. Intuitivement, on se doute que pour des certaines valeurs de paramètres, les deux droites vont se rejoindre à un moment et donc les deux méthodes donneront le même risque de classification.
+
+### Exercice 2
+
+Dans cet exercice, on s'intéresse à la prédiction du diabète chez les femmes, en fonction de plusieurs variables cliniques. Les données se trouvent dans la table diabetes.csv. La variable à prédire est la variable Outcome. Dans ce jeu de données, les variables SkinThickness et Insulin contiennent des données manquantes, codées par la valeur 0.
+
+1\. Importez le jeu de données sous R. Traitez les données manquantes et faites une analyse descriptive de la base de données (statistiques descriptives univariées et bivariées, ACP, . . .).
+
+```{r}
+# On commence par importer la base de données diabetes
+donnees_diabetes=read.csv("diabetes.csv",sep=",",header=TRUE)
+
+# On peut faire un sommaire de la base de données diabetes ce qui nous permet par exemple de voir la moyenne etc pour chaque variable
+```
+
+```{r}
+# On peut visualiser le nom des variables
+cat("Nom des variables de la base de données diabetes:",names(donnees_diabetes),sep=", ")
+```
+
+```{r}
+# On peut aussi avoir un apperçu de notre base de donnée:
+head(donnees_diabetes)
+```
+
+```{r}
+# Pour une variable donnée comme Age, on peut envisager de faire une analyse plus complète:
+cat("Quantiles de la variable Age:",quantile(donnees_diabetes$Age),"\n")
+cat("Moyenne de la variable Age:",mean(donnees_diabetes$Age),"\n")
+cat("Ecart type de la variable Age:",sd(donnees_diabetes$Age),"\n")
+cat("Variance de la variable Age:",var(donnees_diabetes$Age),"\n")
+cat("Min de la variable Age:",min(donnees_diabetes$Age),"\n")
+cat("Max de la variable Age:",max(donnees_diabetes$Age),"\n")
+```
+
+```{r}
+# On peut également afficher les histogrammes des variables si cela nous amuse
+par(mfrow=c(2,4))
+hist(donnees_diabetes$Glucose,main="Glucose",xlab="",ylab="")
+hist(donnees_diabetes$Pregnancies,main="Pregancies",xlab="",ylab="")
+hist(donnees_diabetes$BloodPressure,main="BloodPressure",xlab="",ylab="")
+hist(donnees_diabetes$SkinThickness,main="SkinThickness",xlab="",ylab="")
+hist(donnees_diabetes$Insulin,main="Insulin",xlab="",ylab="")
+hist(donnees_diabetes$BMI,main="BMI",xlab="",ylab="")
+hist(donnees_diabetes$DiabetesPedigreeFunction,main="DPF",xlab="",ylab="")
+hist(donnees_diabetes$Age,main="Age",xlab="",ylab="")
+```
+
+```{r}
+# Pour finir, on fait la même démarche avec cette fois ci les boîtes à moustaches des différentes variables de la base de données:
+par(mfrow=c(2,4))
+boxplot(donnees_diabetes$Glucose,main="Glucose")
+boxplot(donnees_diabetes$Pregnancies,main="Pregancies")
+boxplot(donnees_diabetes$BloodPressure,main="BloodPressure")
+boxplot(donnees_diabetes$SkinThickness,main="SkinThickness")
+boxplot(donnees_diabetes$Insulin,main="Insulin")
+boxplot(donnees_diabetes$BMI,main="BMI")
+boxplot(donnees_diabetes$DiabetesPedigreeFunction,main="DPF")
+boxplot(donnees_diabetes$Age,main="Age")
+```
+
+On traite maintenant les données manquantes de la dataframe ( qui valent 0 dans ce cas ) en normalisant les coefficients valant 0 par la médiane des autres coefficients. Grâce à notre analyse, nous sommes capables de confirmer les dires de l'énoncé du projet, on constate en effet que les variables SkinThickness et Insulin comportent un nombre anormal de '0', signe de données manquantes dans notre cas. Cependant d'autres variables comportent un nombre qui semble anormal de "0" comme les variables BMI, Glucose ou encore BloodPressure.
+
+Normalisation de la variable SkinThickness:
+
+```{r}
+donnees_diabetes$SkinThickness[donnees_diabetes$SkinThickness==0] = median(donnees_diabetes$SkinThickness[donnees_diabetes$SkinThickness!=0])
+```
+
+Normalisation de la variable Insulin:
+
+```{r}
+donnees_diabetes$Insulin[donnees_diabetes$Insulin==0] = median(donnees_diabetes$Insulin[donnees_diabetes$Insulin!=0])
+```
+
+Normalisation de la variable Glucose:
+
+```{r}
+donnees_diabetes$Glucose[donnees_diabetes$Glucose==0] = median(donnees_diabetes$Glucose[donnees_diabetes$Glucose!=0])
+```
+
+Normalisation de la variable BloodPressure:
+
+```{r}
+donnees_diabetes$BloodPressure[donnees_diabetes$BloodPressure==0] = median(donnees_diabetes$BloodPressure[donnees_diabetes$BloodPressure!=0])
+```
+
+Normalisation de la variable BMI:
+
+```{r}
+donnees_diabetes$BMI[donnees_diabetes$BMI==0] = median(donnees_diabetes$BMI[donnees_diabetes$BMI!=0])
+```
+
+On affiche les histogrammes des deux variables concernées pour se rendre compte de la modification:
+
+```{r}
+par(mfrow=c(2,3))
+hist(donnees_diabetes$Insulin,main="Insulin",xlab="",ylab="")
+hist(donnees_diabetes$SkinThickness,main="SkinThickness",xlab="",ylab="")
+hist(donnees_diabetes$BloodPressure,main="BloodPressure",xlab="",ylab="")
+hist(donnees_diabetes$Glucose,main="Glucose",xlab="",ylab="")
+hist(donnees_diabetes$BMI,main="BMI",xlab="",ylab="")
+```
+
+2\. Créez un échantillon d'apprentissage avec 80% de la base de données et un échantillon test avec les 20% restants.
+
+```{r}
+# Réalisation de l'échantillon d'aprentissage et de test 
+
+# On utilise pour cela la fonction sample
+sample=sample(c(TRUE,FALSE),nrow(donnees_diabetes),replace=TRUE,prob= c(0.8,0.2))
+echantillon_train=donnees_diabetes[sample,]
+echantillon_test=donnees_diabetes[!sample,]
+```
+
+3\. Réalisez une analyse discriminante Gaussienne homoscédastique (à partir de la fonction lda) et hétéroscédastique (à partir de la fonction qda) sur la base d'apprentissage. Calculer le taux de mauvaise classification sur l'échantillon test.
+
+```{r}
+# On réalise une analyse lda dans un premier temps via la fonction lda
+model.lda=lda(echantillon_train$Outcome~.,data=echantillon_train)
+predict.lda=predict(model.lda,echantillon_test)
+
+# Le risque associé est le suivant:
+risque.lda= mean(predict.lda$class!=echantillon_test$Outcome)
+cat("Le risque obtenu avec lda est de:",risque.lda,"\n")
+
+# On fait la même opération avec qda 
+model.qda=qda(echantillon_train$Outcome~.,data=echantillon_train)
+predict.qda=predict(model.qda,echantillon_test)
+# Le risque associé est le suivant:
+risque.qda=mean(predict.qda$class!=echantillon_test$Outcome)
+cat("Le risque obtenu avec qda est de:",risque.qda)
+```
+
+4\. Effectuez la même démarche en utilisant cette fois une règle de classification basée sur la régression logistique.
+
+```{r}
+model.logistique= glm(echantillon_train$Outcome~., family="binomial",
+                      data=echantillon_train)
+predict.logistique=predict(model.logistique,echantillon_test,type="response")
+risque.logistique=mean(round(predict.logistique)!=echantillon_test$Outcome)
+cat("Le risque obtenu via régression logistique est de:",risque.logistique)
+```
+
+5\. Effectuez la même démarche en utilisant cette fois une règle de classification basée sur les k-plus proches voisins, avec k = 5.
+
+```{r}
+library(class)
+model.knn=knn(echantillon_train,echantillon_test,echantillon_train$Outcome,k=5)
+risque.knn=mean(model.knn!=echantillon_test$Outcome)
+cat("Le risque obtenu via méthode des 5-plus proches voisins est de:",risque.knn)
+```
+
+6\. Pour le modèle de régression logistique, proposez une méthode de sélection de variables. Calculez le taux de mauvaise classification avec ce nouveau modèle.
+
+On peut utiliser le critère AIC ( Akaike Information Crtiterion ) pour sélectionner les variables. On cherche à minimiser ce critère, AIC donne le meilleur modèle au sens du taux de mauvaise classification.
+
+```{r}
+model.logistique= glm(echantillon_train$Outcome~., family="binomial",data=echantillon_train)
+
+# On utilise alors la fonction step qui minimise le critère AIC de manière automatisée pour réaliser la sélection des variables
+step(model.logistique)
+```
+
+Les variables Pregnancies, Glucose, BMI et DPF sont celles qui minimisent le critère AIC. On calcule donc le taux de mauvaise classification via ce nouveau modèle.
+
+```{r}
+nv_model.logistique=glm(echantillon_train$Outcome~Pregnancies+
+                        DiabetesPedigreeFunction+
+                        BMI+
+                        Glucose, family="binomial",
+                        data=echantillon_train)
+nv_predict.logistique=predict(nv_model.logistique,echantillon_test,type="response")
+nv_risque.logistique=mean(round(nv_predict.logistique)!=echantillon_test$Outcome)
+cat("Le risque obtenu pour glm après application du critère AIC est de:",nv_risque.logistique)
+```
+
+7\. Pour la méthode des k-plus proches voisins, proposez une méthode du choix de k basée sur le risque de classification.
+
+On propose pour cette question une méthode du choix de $k$ basée sur le risque de classification. On calcule le risque de $k$-nn pour $k \in [1,400]$ et lorsque ce risque est minimal, on renvoie la valeur de $k$ associée au risque en question.
+
+```{r}
+risque=c()
+for (i in 1:400){
+  model.knn=knn(echantillon_train,echantillon_test,echantillon_train$Outcome,k=i)
+  risque.knn=mean(model.knn!=echantillon_test$Outcome)
+  risque=append(risque,risque.knn)
+}
+k=c(1:400)
+data=data.frame(k,risque)
+p <- ggplot(data=data, aes(x=k, y=risque,colour="red"))
+p <- p + geom_point(size=1)
+p <- p + ggtitle("Risque de k-nn suivant les valeurs de k")
+p <- p + theme(plot.title = element_text(hjust = 0.5))
+p <- p + theme(legend.position = "none")
+p
+```
+
+```{r}
+meilleur_risque_knn=risque[which.min(risque)]
+cat("Le meilleur risque obtenu est de:",meilleur_risque_knn,",avec la valeur de k suivante:",which.min(risque))
+```
+
+On pourrait aussi procéder par dichotomie pour affiner la recherche du $k$ optimal mais j'ai considéré qu'il était intéressant de voir toutes les itérations de l'algorithme pour se rendre compte qu'à partir de valeurs trop grandes de $k$, le risque devient stationnaire.
+
+8\. Au final, quelle méthode donne le plus petit taux de mauvaise classification ?
+
+On va réaliser 100 fois ce qu'on a fait précédemment et moyenner les risques obtenus pour chaque méthode afin d'avoir une réponse plus générale à cette question. On choisi le k optimal à chaque itération de l'algorithme pour la méthode k-nn.
+
+```{r}
+risque.lda.final=c()
+risque.qda.final=c()
+risque.glm.final=c()
+risque.knn.final=c()
+
+for (i in 1:100){
+  # Création des echantillons trains et tests
+  sample=sample(c(TRUE,FALSE),nrow(donnees_diabetes),replace=TRUE,prob= c(0.8,0.2))
+  echantillon_train=donnees_diabetes[sample,]
+  echantillon_test=donnees_diabetes[!sample,]
+  
+  # Définition des différents modèles
+  model.lda=lda(echantillon_train$Outcome~.,data=echantillon_train)
+  predict.lda=predict(model.lda,echantillon_test)
+  model.qda=qda(echantillon_train$Outcome~.,data=echantillon_train)
+  predict.qda=predict(model.qda,echantillon_test)
+  model.logistique= glm(echantillon_train$Outcome~., 
+                        family="binomial",data =echantillon_train)
+  predict.logistique=predict(model.logistique,echantillon_test,type="response")
+  
+  # knn avec choix optimal de k 
+  risque.knn=c()
+  for (i in seq(1,300,10)){
+    model.knn=knn(echantillon_train,echantillon_test,echantillon_train$Outcome,k=i)
+    risque_knn=mean(model.knn!=echantillon_test$Outcome)
+    risque.knn=append(risque.knn,risque_knn)
+  }
+
+  # Les risques associés sont les suivant:
+  risque.lda= mean(predict.lda$class!=echantillon_test$Outcome)
+  risque.lda.final= append(risque.lda.final,risque.lda)
+  risque.qda= mean(predict.qda$class!=echantillon_test$Outcome)
+  risque.qda.final= append(risque.qda.final,risque.qda)
+  risque.glm=mean(round(predict.logistique)!=echantillon_test$Outcome)
+  risque.glm.final=append(risque.glm.final,risque.glm)
+  risque.knn.final=append(risque.knn.final,min(risque.knn))
+}
+```
+
+On peut visualiser la variation des différents risques sur 100 expériences à l'aide de boxplots comme ceci :
+
+```{r}
+affichage = data.frame(risque.knn.final,
+                       risque.lda.final,
+                       risque.glm.final,
+                       risque.qda.final)
+
+colnames(affichage)=c("knn","lda","glm","qda")
+boxplot(affichage,
+        main="Boxplot du risque sur 100 expe",
+        horizontal=TRUE,
+        border="black",
+        xlab="Valeur du risque",
+        ylab="Modèle",
+        col="lightgreen"
+        )
+```
+
+On peut aussi visualiser la moyenne des risques obtenus sous forme de tableau, ce qui récapitule ce qu'on a fait et nous permet de donner une réponse finale.
+
+```{r}
+df = data.frame(
+  Méthode = c("lda","qda","glm","knn"),
+  Risque = c(mean(risque.lda.final),mean(risque.qda.final),
+             mean(risque.glm.final),mean(risque.knn.final))
+)
+head(df)
+```
+
+```{r}
+cat("Le plus petit risque en moyenne est:",min(df$Risque),
+    "obtenu avec la méthode:",df$Méthode[which.min(df$Risque)])
+```
+
+Il semblerait après plusieurs tests que la méthode k-nn pour k optimal est la meilleure en moyenne dans notre cas. La méthode glm prend la deuxième place et ensuite nous avons la méthode lda en troisième place.

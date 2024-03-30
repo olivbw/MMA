@@ -1,0 +1,292 @@
+---
+title: 'TP3:EVALUATION_OLIVIER_BOUETWILLAUMEZ'
+output:
+  html_document:
+    df_print: paged
+---
+
+## <u>*Exercice 1.*</u>
+
+Pour cet exercice, nous travaillons sur le jeu de données `Ozone`. Il est disponible à l'adresse `"https: //r-stat-sc-donnees.github.io/ozone.txt"`. Pour le récupérer on pourra procéder ainsi :
+
+```{r}
+url <- "https://r-stat-sc-donnees.github.io/ozone.txt"
+file_name <- "ozone.txt"
+file_path <- "./"
+# Call the download.file() function, passing in the URL and
+# file name/location as arguments
+download.file(url, paste(file_path, file_name, sep = ""), mode = "wb")
+ozone <- read.table(file_name)
+head(ozone)
+```
+
+Ce jeu de données contient des informations concernant la pollution de l'air, notamment :
+
+-   `maxO3` : maximum de concentration d'ozone observé sur la journée en $\mu g/m^3$
+
+-   `T9`, `T12`, `T15` : Température observée à 9, 12 et 15h,
+
+-   `Ne9`, `Ne12`, `Ne15` : Nébulosité observée à 9, 12 et 15h,
+
+-   `Vx9`, `Vx12`, `Vx15` : Composante E-O du vent à 9, 12 et 15h,
+
+-   `maxO3v` : Teneur maximum en ozone observée la veille,
+
+-   `vent` : orientation du vent à 12h,
+
+-   `pluie` : occurrence ou non de précipitations.
+
+### <u>*Question 1:*</u>
+
+#### Après avoir enlevé les variables qualitatives `vent` et `pluie`, ajuster un modèle de régression linéaire multiple non pénalisée pour expliquer la concentration d'ozone `maxO3` en fonction des autres variables.
+
+#### Identifier les variables significatives. (On peut utiliser simplement la fonction `lm` de `R`)
+
+```{r}
+ozone <- read.table(file_name)
+# On retire les variables qualitatives vent et pluie de la data frame
+ozone <- subset(ozone, select = -c(length(ozone),length(ozone)-1))
+# On ajuste alors un modèle de regression linéaire multiple non pénalisé pour expliquer la concentration d'ozone en fonction des autres variables:
+model.lm=lm(ozone$maxO3~.,data=ozone)
+summary(model.lm)
+```
+
+Pour identifier les variables significatives, on peut dans un premier temps regarder les $p-values$ associées à chaque variable, et si elles sont relativement faibles ( soit $<0.05$), alors cela signifira sûrement que la variable est impactante.
+
+De ce fait, on constate que les variables significatives sont principalement la variable `maxO3v` ( Teneur maximum en ozone observée la veille ) avec $\text{p-value} = 1.88\times10^{-7}$, ainsi que la variable `Ne9` ( Nébulosité observée à 9h ) avec $\text{p-value} = 0.0216$.
+
+Cependant, on peut aussi regarder la colonne `Estimate`, les variables dont ces coefficients sont les plus grands en valeur absolue sont alors significatives. Dans notre cas, la variable `T12` ( Température observée à 12h) ou encore la variable `Vx9` (Composante E-O du vent à 9h) sont concernées.
+
+### <u>*Question 2:*</u>
+
+#### Centrer et réduire les données puis ajuster une régression *RIDGE* en faisant varier la pénalité $\lambda$ sur une grille pertinente (par exemple celle automatiquement choisie par le package `glmnet`).
+
+On commence par centrer et réduire les données ( on pourrait utiliser la fonction `scale` de `R` pour faire cela également).
+
+```{r}
+# centrer et réduire les données
+for (j in 1:ncol(ozone)){
+  ozone[,j]=(ozone[,j]-mean(ozone[,j]))/sd(ozone[,j])
+}
+```
+
+On ajuste ensuite une régression ridge et on trace le chemin de régularisation.
+
+```{r}
+library(glmnet)
+x=data.matrix(ozone[2:length(ozone)])
+y=ozone$maxO3
+fit.ridge = glmnet(x,y,alpha=0)
+plot(fit.ridge,xvar="lambda",label=TRUE)
+```
+
+### <u>*Question 3:*</u>
+
+#### Ajuster cette fois une régression *LASSO* en faisant varier $\lambda$ sur la grille puis tracer le chemin de régularisation de chacune des variables.
+
+```{r}
+fit.lasso <- glmnet(x,y,alpha= 1)
+plot(fit.lasso,xvar="lambda",label=TRUE)
+```
+
+### <u>*Question 4:*</u>
+
+#### Ajuster finalement une régression *ELASTIC-NET* puis tracer le chemin de régularisation de chacune des variables.
+
+On peut par exemple prendre ici $\alpha=0.3$ mais c'est un choix arbitraire. On ajuste le modèle puis on trace le chemin de régularisation.
+
+```{r}
+fit.elastic <- glmnet(x,y,alpha= 0.3)
+plot(fit.elastic,xvar="lambda",label=TRUE)
+```
+
+### <u>*Question 5:*</u>
+
+#### Pour chacune des trois régressions linéaires pénalisées, calibrer la pénalité par validation croisée puis comparer les variables du modèle retenu. On pourra utiliser la fonction `cv.glmnet`
+
+#### Régression *ridge*:
+
+On affiche via la fonction `cv.glmnet` l'erreur quadratique moyenne en fonction des valeurs de $\lambda$
+
+```{r}
+ridge.cv=cv.glmnet(x,y,alpha=0)
+plot(ridge.cv)
+```
+
+La valeur de $\lambda$ retenue est alors obtenue en regardant ceci ( à savoir que toutes les valeurs de $\lambda$ entre `lambda.min` et `lambda.1se` sont correctes, mais par simplicité on choisi dans notre cas `lambda.min`):
+
+```{r}
+cat("Valeur de lambda obtenue par cross-validation:",ridge.cv$lambda.min)
+```
+
+Ensuite, on regarde les coefficients obtenus pour chaque variable avec la valeur de $\lambda$ choisie précedemment via la fonction `coef`.
+
+```{r}
+coef_ridge = coef(ridge.cv, s = "lambda.min")
+print(coef_ridge)
+```
+
+Les variables dont le coefficient dans la colonne `s1` est le plus grand en valeur absolue sont alors celles qui sont les plus significatives. Dans notre cas, il s'agit des variables `T12`,`T15`,`Ne9,Vx9` ainsi que `maxO3v`, ce qui est relativement similaire à ce que l'on avait conclu dans la première question du TP.
+
+#### Régression *LASSO*:
+
+On affiche via la fonction `cv.glmnet` l'erreur quadratique moyenne en fonction des valeurs de $\lambda$
+
+```{r}
+lasso.cv=cv.glmnet(x,y,alpha=1)
+plot(lasso.cv)
+```
+
+La valeur de $\lambda$ retenue est alors obtenue en regardant ceci :
+
+```{r}
+cat("Valeur de lambda obtenue par cross-validation:",lasso.cv$lambda.min)
+```
+
+Ensuite, on regarde les coefficients obtenus pour chaque variable avec la valeur de $\lambda$ choisie précedemment via la fonction `coef`.
+
+```{r}
+coef_lasso = coef(lasso.cv, s = "lambda.min")
+print(coef_lasso)
+```
+
+On constate ici que certaines variables ne sont pas du tout prises en compte dans le modèle retenu, ce qui est attendu en raison du fait que la pénalité lasso a tendance à favoriser les configurations parcimonieuses. Les variables les plus significatives sont encores les mêmes plus ou moins que pour la pénalité ridge.
+
+#### Régression *ELASTIC-NET*:
+
+On affiche via la fonction `cv.glmnet` l'erreur quadratique moyenne en fonction des valeurs de $\lambda$
+
+```{r}
+elastic.cv=cv.glmnet(x,y,alpha=0.3)
+plot(elastic.cv)
+```
+
+La valeur de $\lambda$ retenue est alors obtenue en regardant ceci :
+
+```{r}
+cat("Valeur de lambda obtenue par cross-validation:",elastic.cv$lambda.min)
+```
+
+Ensuite, on regarde les coefficients obtenus pour chaque variable avec la valeur de $\lambda$ choisie précedemment via la fonction `coef`.
+
+```{r}
+coef_elastic = coef(elastic.cv, s = "lambda.min")
+print(coef_elastic)
+```
+
+Ici c'est un "mélange" entre les deux résultats obtenus précedemment. Cela ne nous surprend pas particulièrement car l'*ELASTIC-NET* que l'on a choisi est plus proche du *RIDGE* ( avec $\alpha=0.3$ ) que du lasso et donc seulement $2$ variables sont manquantes dans le modèle retenu.
+
+On peut également faire un graphe comparatif de toutes les méthodes précédentes pour mieux se rendre des valeurs retenues en fonction de ces dernières.
+
+```{r}
+par(mfrow=c(2,3))
+
+plot(fit.ridge,xvar="lambda")
+plot(fit.lasso,xvar="lambda")
+plot(fit.elastic,xvar="lambda")
+
+plot(ridge.cv,main="ridge")
+plot(lasso.cv,main="lasso")
+plot(elastic.cv,main="elastic")
+```
+
+### <u>Question 6</u>
+
+#### On cherche dans cette question à comparer les trois approches suivantes en terme de risque de prédiction:
+
+1.  Sélection des variables significatives dans un modèle linéaire simple puis ajuster un modèle linéaire sur les variables sélectionnées.
+
+2.  Sélectionner les variables à l'aide du *LASSO* pour un certain $\lambda$ choisi par cross-validation puis ajuster le modèle linéaire sur les variables sélectionnées
+
+3.  Effectuer une *ACP* du jeu de données des covariables, sélectionner une dimension à l'aide d'un screen-plot puis ajuster un modèle linéaire.
+
+On rappelle que faire l'*ACP* de $X$ consiste seulement à calculer les vecteurs propres et valeurs propres de $X^TX$, puis après avoir choisi un certain nombre de valeurs propres 'plus grandes' que les autres, projeter le jeu de données sur les premiers vecteurs propres correspondant. Dans `R`, on peut effectuer une décomposition en valeurs propres et vecteurs propres par la fonction `eigen`.
+
+Après avoir mis de côté 1/3 des données pour servir de jeu test à l'étape d'évaluation du risque de prédiction $E[(Y-\hat{Y})^2]$, mettez en oeuvre les trois approches ci-dessus. Comparez les résultats. Discutez les limites de vos conclusions.
+
+Dans un premier temps on partitionne les données en 1/3 pour la base test, et 2/3 pour la base d'apprentissage ou d'entrainement de la manière suivante:
+
+```{r}
+# On met les données sous forme de data.frame 
+data_quest6=data.frame(x,y)
+
+# On récupère le nombre de données 
+N=length(data_quest6$y)
+
+# On fait la partition
+index=sample(1:N, round((2/3)*N), replace = F) 
+data_train=data_quest6[index,] 
+data_test=data_quest6[-index,]
+```
+
+#### Première méthode:
+
+En se servant de la ***Question 1***, on sait que les variables significatives dans un modèle linéaire simple sont `maxO3v`,`Ne9`,`T12` et `Vx9`, ajustons alors un modèle linéaire sur ces variables à l'aide de la base d'apprentissage et calculons le risque associé sur la base de test.
+
+```{r}
+# Modèle linéaire basé sur les 4 variables en question en utilisant la base d'apprentissage
+model.lm.optim=lm(y~maxO3v+Ne9+T12+Vx9,data=data_train)
+
+# Calcul de la prédiction sur la base test
+predict.lm.optim=predict(model.lm.optim,newdata=data_test,type="response")
+risque.methode1=mean((data_test$y-predict.lm.optim)^2)
+cat("Le risque obtenu via la première méthode est de:",risque.methode1)
+```
+
+#### Deuxième méthode:
+
+En se servant de la ***Question 5***, on sait que les variables significatives choisies à l'aide du *LASSO* sont `maxO3v`,`Ne9` et `T12` , ajustons alors un modèle linéaire sur ces variables à l'aide de la base d'apprentissage et calculons le risque associé sur la base test. ( A savoir que l'on prend ici les variables dont le coefficient est de l'ordre de $10^{-1}$ mais on pourrait éventuellement utiliser les autres variables dont le coefficient vaut $10^{-2}$).
+
+```{r}
+model.lasso.optim=lm(y~maxO3v+Ne9+T12,data=data_train)
+predict.lasso.optim=predict(model.lasso.optim,newdata=data_test,type="response")
+risque.methode2=mean((data_test$y-predict.lasso.optim)^2)
+cat("Le risque obtenu via la première méthode est de:",risque.methode2)
+```
+
+#### Troisième méthode:
+
+Nous allons ici réaliser une *ACP* sur les covariables de la base d'apprentissage.
+
+Dans un premier temps calculons les vecteurs propres et valeurs propre de $A=X^TX$ pour $X$ étant la matrice des covariables d'entraînement , et affichons les valeurs propres afin de choisir une dimension (sous forme de scree plot).
+
+```{r}
+# Mise sous forme de matrice des covariables de test et d'entrainement
+X_train=as.matrix(data_train[1:10])
+X_test=as.matrix(data_test[1:10])
+
+# Calcul de A
+A=t(X_train)%*%(X_train)
+
+# On récupérer les vecteurs et valeurs propres de A puis on fait un scree-plot
+eigen=eigen(A)
+plot(eigen$values,type = "b", pch = 19,xlab = "Composante", ylab = "Valeur propre",
+     main = "Scree Plot des Valeurs Propres")
+```
+
+On choisi alors les deux premières valeurs propres qui sont plus grandes que les autres significativement et on projète le jeu de données d'entraînement et de test sur les premiers vecteurs propres correspondants. On réalise ensuite la prédiction sur le modèle linéaire associé.
+
+```{r}
+# On créer la matrice de passage à l'aide des 2 vecteurs propres associés aux plus grandes valeurs propres de A. 
+passage=eigen$vectors[,1:2]
+
+# On projète les données d'entrainement et de test sur cette base
+data_projete_train=X_train%*%passage
+data_projete_test=X_test%*%passage
+
+# On ajoute les variables à expliquer à chaque jeu de donnée
+data_acp_train=data.frame(data_projete_train,data_train[11])
+data_acp_test=data.frame(data_projete_test,data_test[11])
+
+# On réalise le modèle et la prédiction
+model_acp=lm(data_acp_train$y~.,data=data_acp_train)
+predict_acp=predict(model_acp,newdata=data_acp_test)
+risque.methode3=mean((data_acp_test$y-predict_acp)^2)
+cat("Le risque obtenu via la première méthode est de:",risque.methode3)
+```
+
+Les résultats obtenus sont relativement similaires et très variables d'une exécution à une autre en raison du faible nombre de variables d'entraînement ( seulement $75$ environ ), on ne peut pas réellement conclure de manière pretinente dans notre cas.
+
+Cependant, on peut réfléchir sur le fait que la ***Méthode 3*** est bien plus envisageable et généralisable en grande dimension, car, si nous réalisons les mêmes manipulations mais sur une base de donnée avec bien plus de variables explicatives et un grand nombre de données, il sera pénible de chosir à la main les variables qui nous sembles significatives comme dans le cas de la ***Méthode 1*** par exemple, ou encore éventuellement de la ***Méthode 2***.
+
+Je pense donc que nous préférons d'une manière générale la ***Méthode 3*** ( via l'ACP ).

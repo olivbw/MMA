@@ -1,4 +1,4 @@
-The aim of this project, supervised by Mrs. Claire Chavaudret (UMR 7586 CNRS) and carried out as part of the first year of the MMA master's program at Université Paris Cité, is to analyze and synthesize a scientific article, preferably focusing on applied mathematics to biology.
+The aim of this project, supervised by Mrs. [Claire Chavaudret](https://webusers.imj-prg.fr/~claire.chavaudret/) (UMR 7586 CNRS) and carried out as part of the first year of the MMA master's program at Université Paris Cité, is to analyze and synthesize a scientific article, preferably focusing on applied mathematics to biology.
 
 The article upon which this project is based briefly presents the model by Eugene M. Izhikevich, a system with two equations that represents the variation of action potential within a neuron.
 

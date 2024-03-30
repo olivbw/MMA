@@ -1,0 +1,1 @@
+These introductory projects on non-differentiable optimization were proposed by Mr. [Sylvain Durand](https://helios2.mi.parisdescartes.fr/~sdurand/index.html) during the first semester of the Masters's program.
